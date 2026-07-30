@@ -45,18 +45,6 @@ export function getAgentSessionDir(sessionId: string): string {
 }
 
 /**
- * Get the path to the global model-tiers config file.
- *
- *   `~/.pi/atlas/model-tiers.json`
- *
- * Maps `model_tier` values ("fast" | "quality") to pi model patterns.
- * Created on first use via auto-detection (`pi --list-models`).
- */
-export function getModelTiersPath(): string {
-  return join(getAtlasDir(), "model-tiers.json");
-}
-
-/**
  * Get the path to the global Feishu notification config file.
  *
  *   `~/.pi/atlas/notify.json`

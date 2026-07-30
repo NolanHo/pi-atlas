@@ -25,7 +25,7 @@ Background task system unifying bash and agent execution. Seven tools:
 | Tool | Description |
 |------|-------------|
 | `create_bash` | Run a shell command in the background. Returns immediately with a task ID. |
-| `create_agent` | Spawn a pi sub-process as a background agent task. Returns immediately with a task ID. Built-in agents: `explorer`, `code-reviewer`, `general` (use `general` for custom behavior). |
+| `create_agent` | Spawn a pi sub-process as a background agent task. Returns immediately with a task ID. Built-in agents: `scout`, `implementer`, `reviewer`, `general` (use `general` for custom behavior). |
 | `await_task` | Block until specified tasks finish. Default timeout 3600s; timeout does NOT cancel tasks. While waiting, streams a live status showing each running task's bash output tail (or the sub-agent's last action). |
 | `cancel_task` | Kill a running task's process tree (SIGTERM → 5s → SIGKILL). |
 | `resume_task` | Continue a finished agent task in a new sub-process. Bash tasks cannot be resumed. |
@@ -33,7 +33,7 @@ Background task system unifying bash and agent execution. Seven tools:
 | `watch_task` | View the current output and status of a task. |
 
 Key features:
-- **Agent presets** — three built-in agents (`explorer`, `code-reviewer`, `general`); the list is injected into the create_agent tool description.
+- **Agent presets** — four built-in agents (`scout`, `implementer`, `reviewer`, `general`). Each role pins a model + thinking level; the list is injected into the create_agent tool description.
 - **Prompt wrapping** — agent `prefix`/`suffix` wrap the task prompt: `prefix + "\n\n" + prompt + "\n\n" + suffix`.
 - **Session-level isolation** — tasks are scoped per session, persisted to `~/.pi/atlas/sessions/<sessionId>/task/`.
 - **Output truncation** — tail-kept at 50KB / 2000 lines; full output saved to a file when truncated.
@@ -208,6 +208,23 @@ ln -s /path/to/pi-atlas/extensions/guard        ~/.pi/agent/extensions/guard
 ```
 
 Or run it directly: `npx tsx extensions/pi-acp-v2/server.ts`.
+
+### Agent presets
+
+Four built-in agents are always available, each pinning a model and thinking level so delegation lands on the right model without caller configuration:
+
+| Agent | Description | Model | Thinking | Tools |
+|------|-------------|-------|----------|-------|
+| `scout` | Read-only codebase recon returning compressed context for handoff | macaron-v1-coding-venti | low | read, grep, find, ls, bash |
+| `implementer` | Implementation owner for a single scoped change — gathers context, edits, verifies | macaron-v1-coding-venti | high | read, write, edit, bash |
+| `reviewer` | Independent read-only review against requirements and correctness | gpt-5.6-sol | max | read, grep, bash |
+| `general` | General-purpose, no special prompt — use for custom behavior | (inherits parent) | (inherits) | (all tools) |
+
+Models resolve through the pi model registry (`~/.pi/agent/models.json`). `reviewer` runs on `gpt-5.6-sol` via the `macaron-gateway` provider (the ActRail LLM router gateway); `scout`/`implementer` run on `macaron-v1-coding-venti`. `general` omits a model so the child inherits the parent session's model.
+
+For custom agent behavior, use `general` and craft the task prompt directly — its `prefix`/`suffix` are empty, so the prompt you pass becomes the full instruction. You can also pass `cwd` to tailor it.
+
+Specifying a non-existent agent returns an error with the available agents list.
 
 ## Development
 

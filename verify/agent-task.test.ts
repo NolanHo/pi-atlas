@@ -16,8 +16,6 @@ import {
   extractSessionIdFromPath,
   getPiInvocation,
   MAX_AGENT_DEPTH,
-  resolveModelFromTier,
-  parseModelPatternFromListOutput,
 } from "../extensions/task/agent-task.js";
 import { resolveAgent, wrapPrompt, formatAgentCatalog, BUILTIN_AGENTS } from "../extensions/task/agents.js";
 import * as persistence from "../extensions/task/persistence.js";
@@ -649,14 +647,18 @@ console.log("\nTest 11: real pi end-to-end (simple prompt)");
 
 console.log("\nTest 12: resolveAgent finds built-in agents");
 {
-  const resolved = resolveAgent("explorer");
-  assert(resolved !== null, "explorer resolved");
-  assert(resolved!.prefix?.includes("You are a scout"), "explorer prefix extracted");
-  assert(resolved!.tools?.includes("read"), "explorer tools include read");
+  const scout = resolveAgent("scout");
+  assert(scout !== null, "scout resolved");
+  assert(scout!.prefix?.includes("You are a scout"), "scout prefix extracted");
+  assert(scout!.tools?.includes("read"), "scout tools include read");
 
-  const reviewer = resolveAgent("code-reviewer");
-  assert(reviewer !== null, "code-reviewer resolved");
-  assert(reviewer!.prefix?.includes("Senior Code Reviewer"), "code-reviewer prefix extracted");
+  const reviewer = resolveAgent("reviewer");
+  assert(reviewer !== null, "reviewer resolved");
+  assert(reviewer!.prefix?.includes("senior reviewer"), "reviewer prefix extracted");
+
+  const implementer = resolveAgent("implementer");
+  assert(implementer !== null, "implementer resolved");
+  assert(implementer!.tools?.includes("edit"), "implementer tools include edit");
 
   const general = resolveAgent("general");
   assert(general !== null, "general resolved");
@@ -670,25 +672,32 @@ console.log("\nTest 12: resolveAgent finds built-in agents");
 // 12a. Built-in agents
 // ---------------------------------------------------------------------------
 
-console.log("\nTest 12a: built-in agents (explorer, code-reviewer, general)");
+console.log("\nTest 12a: built-in agents (scout, implementer, reviewer, general)");
 {
-  assert(BUILTIN_AGENTS["explorer"] !== undefined, "explorer built-in exists");
-  assert(BUILTIN_AGENTS["code-reviewer"] !== undefined, "code-reviewer built-in exists");
+  assert(BUILTIN_AGENTS["scout"] !== undefined, "scout built-in exists");
+  assert(BUILTIN_AGENTS["implementer"] !== undefined, "implementer built-in exists");
+  assert(BUILTIN_AGENTS["reviewer"] !== undefined, "reviewer built-in exists");
   assert(BUILTIN_AGENTS["general"] !== undefined, "general built-in exists");
 
-  assert(BUILTIN_AGENTS["explorer"].prefix !== undefined, "explorer has prefix");
-  assert(BUILTIN_AGENTS["explorer"].suffix === undefined, "explorer has no suffix");
-  assert(BUILTIN_AGENTS["explorer"].tools?.includes("read"), "explorer tools include read");
-  assert(BUILTIN_AGENTS["explorer"].tools?.includes("grep"), "explorer tools include grep");
+  assert(BUILTIN_AGENTS["scout"].prefix !== undefined, "scout has prefix");
+  assert(BUILTIN_AGENTS["scout"].suffix === undefined, "scout has no suffix");
+  assert(BUILTIN_AGENTS["scout"].tools?.includes("read"), "scout tools include read");
+  assert(BUILTIN_AGENTS["scout"].tools?.includes("grep"), "scout tools include grep");
+  assert(BUILTIN_AGENTS["scout"].model === "macaron-v1-coding-venti:low", "scout pins macaron low");
 
-  assert(BUILTIN_AGENTS["code-reviewer"].prefix !== undefined, "code-reviewer has prefix");
-  assert(BUILTIN_AGENTS["code-reviewer"].tools?.includes("read"), "code-reviewer tools include read");
-  assert(BUILTIN_AGENTS["code-reviewer"].tools?.includes("bash"), "code-reviewer tools include bash");
+  assert(BUILTIN_AGENTS["implementer"].tools?.includes("edit"), "implementer tools include edit");
+  assert(BUILTIN_AGENTS["implementer"].model === "macaron-v1-coding-venti:high", "implementer pins macaron high");
 
-  // general: no prefix, no suffix, no tools
+  assert(BUILTIN_AGENTS["reviewer"].prefix !== undefined, "reviewer has prefix");
+  assert(BUILTIN_AGENTS["reviewer"].tools?.includes("read"), "reviewer tools include read");
+  assert(BUILTIN_AGENTS["reviewer"].tools?.includes("bash"), "reviewer tools include bash");
+  assert(BUILTIN_AGENTS["reviewer"].model === "gpt-5.6-sol:max", "reviewer pins gpt-5.6-sol max");
+
+  // general: no prefix, no suffix, no tools, no model (inherits parent)
   assert(BUILTIN_AGENTS["general"].prefix === undefined, "general has no prefix");
   assert(BUILTIN_AGENTS["general"].suffix === undefined, "general has no suffix");
   assert(BUILTIN_AGENTS["general"].tools === undefined, "general has no tools");
+  assert(BUILTIN_AGENTS["general"].model === undefined, "general has no model (inherits parent)");
 }
 
 // ---------------------------------------------------------------------------
@@ -697,9 +706,9 @@ console.log("\nTest 12a: built-in agents (explorer, code-reviewer, general)");
 
 console.log("\nTest 12b: wrapPrompt wraps prompt with prefix and suffix");
 {
-  // prefix only (explorer)
-  const explorer = BUILTIN_AGENTS["explorer"];
-  const wrapped = wrapPrompt("Find the auth module", explorer);
+  // prefix only (scout)
+  const scout = BUILTIN_AGENTS["scout"];
+  const wrapped = wrapPrompt("Find the auth module", scout);
   assert(wrapped.startsWith("You are a scout"), "prefix at start");
   assert(wrapped.includes("Find the auth module"), "prompt in middle");
   assert(wrapped.endsWith("Find the auth module"), "prompt at end (no suffix)");
@@ -725,8 +734,9 @@ console.log("\nTest 12b: wrapPrompt wraps prompt with prefix and suffix");
 console.log("\nTest 12c: formatAgentCatalog lists all built-in agents");
 {
   const catalog = formatAgentCatalog(Object.values(BUILTIN_AGENTS));
-  assert(catalog.includes("explorer:"), "catalog includes explorer");
-  assert(catalog.includes("code-reviewer:"), "catalog includes code-reviewer");
+  assert(catalog.includes("scout:"), "catalog includes scout");
+  assert(catalog.includes("implementer:"), "catalog includes implementer");
+  assert(catalog.includes("reviewer:"), "catalog includes reviewer");
   assert(catalog.includes("general:"), "catalog includes general");
   assert(catalog.includes("- "), "catalog uses dash format");
 }
@@ -739,8 +749,9 @@ console.log("\nTest 12d: CreateAgent description has agent catalog");
 {
   const { createAgentTool } = await import("../extensions/task/agent-task.js");
   assert(createAgentTool.description.includes("Available agents:"), "description has Available agents header");
-  assert(createAgentTool.description.includes("explorer:"), "description lists explorer");
-  assert(createAgentTool.description.includes("code-reviewer:"), "description lists code-reviewer");
+  assert(createAgentTool.description.includes("scout:"), "description lists scout");
+  assert(createAgentTool.description.includes("implementer:"), "description lists implementer");
+  assert(createAgentTool.description.includes("reviewer:"), "description lists reviewer");
   assert(createAgentTool.description.includes("general:"), "description lists general");
 }
 
@@ -768,8 +779,9 @@ console.log("\nTest 12e: CreateAgent not-found error lists available agents");
 
   assert(result.isError === true, "returns isError");
   assert(result.content[0].text.includes("not found"), "error says not found");
-  assert(result.content[0].text.includes("explorer"), "error lists explorer");
-  assert(result.content[0].text.includes("code-reviewer"), "error lists code-reviewer");
+  assert(result.content[0].text.includes("scout"), "error lists scout");
+  assert(result.content[0].text.includes("implementer"), "error lists implementer");
+  assert(result.content[0].text.includes("reviewer"), "error lists reviewer");
   assert(result.content[0].text.includes("general"), "error lists general");
   assert(result.details.taskId === "", "no task created");
 
@@ -830,79 +842,6 @@ console.log("\nTest 12f: usage.cost accumulation (object form)");
     rmSync(sessionDir, { recursive: true, force: true });
     rmSync(tempDir, { recursive: true, force: true });
   }
-}
-
-// ---------------------------------------------------------------------------
-// 13. model_tier resolution + auto-detection
-// ---------------------------------------------------------------------------
-
-console.log("\nTest 13: resolveModelFromTier reads / creates model-tiers.json");
-{
-  const tempDir = mkdtempSync(join(tmpdir(), "pi-agent-tier-"));
-  process.env.PI_ATLAS_DIR = tempDir;
-  process.env.PI_CODING_AGENT_DIR = tempDir;
-
-  const { getModelTiersPath } = await import("../extensions/shared/atlas-paths.js");
-  const configPath = getModelTiersPath();
-
-  // First call: config doesn't exist → auto-detect (may fall back to default)
-  const fast = resolveModelFromTier("fast");
-  const quality = resolveModelFromTier("quality");
-  assert(typeof fast === "string" && fast.length > 0, "fast tier resolves to a string");
-  assert(typeof quality === "string" && quality.length > 0, "quality tier resolves to a string");
-  // A real model pattern never contains whitespace — the pre-fix bug stored the
-  // `pi --list-models` table *header* here ("provider  model  context  ...").
-  assert(fast !== undefined && !/\s/.test(fast), "fast tier is a valid model pattern (no spaces)");
-  assert(quality !== undefined && !/\s/.test(quality), "quality tier is a valid model pattern (no spaces)");
-  assert(existsSync(configPath), "model-tiers.json created on first call");
-
-  // Self-heal: a stale config holding an invalid (header) value is re-detected
-  // rather than trusted.
-  const HEADER = "provider     model                    context  max-out  thinking  images";
-  writeFileSync(configPath, JSON.stringify({ fast: HEADER, quality: HEADER }) + "\n");
-  const healed = resolveModelFromTier("quality");
-  assert(healed !== undefined && !/\s/.test(healed), "stale header config self-heals to a valid pattern");
-
-  // Edit the config and verify it's read back
-  writeFileSync(configPath, JSON.stringify({ fast: "custom-fast-model", quality: "custom-quality-model" }) + "\n");
-  assert(resolveModelFromTier("fast") === "custom-fast-model", "reads updated fast model");
-  assert(resolveModelFromTier("quality") === "custom-quality-model", "reads updated quality model");
-
-  rmSync(tempDir, { recursive: true, force: true });
-}
-
-// ---------------------------------------------------------------------------
-// 13a. parseModelPatternFromListOutput skips the table header
-// ---------------------------------------------------------------------------
-
-console.log("\nTest 13a: parseModelPatternFromListOutput skips header, returns model");
-{
-  // Real `pi --list-models` output shape.
-  const output = [
-    "provider     model                    context  max-out  thinking  images",
-    "macaron      macaron-v1-coding-venti  600K     131.1K   yes       no    ",
-    "macaron-sol  gpt-5.6-sol              300K     131.1K   yes       yes   ",
-  ].join("\n");
-  assert(
-    parseModelPatternFromListOutput(output) === "macaron-v1-coding-venti",
-    "returns first data-row model (not the header)",
-  );
-
-  // Header-only output (no models configured) → null.
-  assert(
-    parseModelPatternFromListOutput("provider  model  context  max-out  thinking  images\n") === null,
-    "header-only output → null",
-  );
-
-  // The bare header line must never leak through as a model name.
-  assert(
-    parseModelPatternFromListOutput("provider     model                    context  max-out  thinking  images") === null,
-    "bare header line → null (never returned as a model)",
-  );
-
-  // Empty / error input → null.
-  assert(parseModelPatternFromListOutput("") === null, "empty output → null");
-  assert(parseModelPatternFromListOutput("Error: no models found") === null, "error line → null");
 }
 
 // ---------------------------------------------------------------------------

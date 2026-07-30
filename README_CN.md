@@ -25,7 +25,7 @@ pi-atlas 是一组相互独立的 pi 扩展。每个扩展是 `extensions/` 下�
 | 工具 | 说明 |
 |------|------|
 | `CreateBash` | 后台执行 shell 命令，立即返回任务 ID。 |
-| `CreateAgent` | 后台启动 pi 子进程执行 agent 任务，立即返回任务 ID。内置角色：`explorer`、`code-reviewer`、`general`（自定义行为用 `general`）。 |
+| `CreateAgent` | 后台启动 pi 子进程执行 agent 任务，立即返回任务 ID。内置角色：`scout`、`implementer`、`reviewer`、`general`（自定义行为用 `general`）。 |
 | `AwaitTask` | 阻塞等待指定任务完成。默认超时 3600 秒；超时不会取消任务。等待期间实时流式显示状态：每个运行中的任务会附带 bash 输出尾部（或子代理的最后一个动作）。 |
 | `CancelTask` | 终止运行中的任务进程树（SIGTERM → 5秒 → SIGKILL）。 |
 | `ResumeTask` | 续跑已完成的 agent 任务（启动新子进程）。bash 任务不可续跑。 |
@@ -33,7 +33,7 @@ pi-atlas 是一组相互独立的 pi 扩展。每个扩展是 `extensions/` 下�
 | `WatchTask` | 查看任务的当前输出和状态。 |
 
 核心特性：
-- **Agent 预设角色** — 三个内置角色（`explorer`、`code-reviewer`、`general`）；角色列表注入到 CreateAgent 工具描述。
+- **Agent 预设角色** — 四个内置角色（`scout`、`implementer`、`reviewer`、`general`）。每个角色绑定模型 + 思考等级；角色列表注入到 create_agent 工具描述。
 - **提示词包裹** — agent 的 `prefix`/`suffix` 包裹 task prompt：`prefix + "\n\n" + prompt + "\n\n" + suffix`。
 - **会话级隔离** — 任务按会话隔离，持久化到 `~/.pi/atlas/sessions/<sessionId>/task/`。
 - **输出截断** — 尾部保留 50KB / 2000 行；超限时完整输出保存到文件。
@@ -208,6 +208,23 @@ ln -s /path/to/pi-atlas/extensions/guard         ~/.pi/agent/extensions/guard
 ```
 
 或直接运行：`npx tsx extensions/pi-acp-v2/server.ts`。
+
+### Agent 预设角色
+
+四个内置角色始终可用，每个绑定模型与思考等级，委派时无需调用方配置模型即可落到合适模型：
+
+| 角色 | 描述 | 模型 | 思考 | 工具 |
+|------|------|------|------|------|
+| `scout` | 只读代码侦察，返回压缩上下文供交接 | macaron-v1-coding-venti | low | read, grep, find, ls, bash |
+| `implementer` | 单一范围变更的实现负责人 — 收集上下文、编辑、验证 | macaron-v1-coding-venti | high | read, write, edit, bash |
+| `reviewer` | 独立只读审查（需求合规 + 正确性） | gpt-5.6-sol | max | read, grep, bash |
+| `general` | 通用，无特殊提示词 — 用于自定义行为 | （继承父进程） | （继承） | （所有工具） |
+
+模型经 pi 模型注册表（`~/.pi/agent/models.json`）解析。`reviewer` 通过 `macaron-gateway` provider（ActRail LLM 路由网关）运行 `gpt-5.6-sol`；`scout`/`implementer` 运行 `macaron-v1-coding-venti`。`general` 不指定模型，子进程继承父会话模型。
+
+自定义 agent 行为时使用 `general`，直接编写 task prompt — 它没有 `prefix`/`suffix`，你传入的 prompt 即完整指令。也可配合 `cwd` 进一步定制。
+
+指定不存在的 agent 会报错并列出所有可用角色。
 
 ## 开发
 
