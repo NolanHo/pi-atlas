@@ -127,7 +127,7 @@ export const BUILTIN_AGENTS: Record<string, AgentDefinition> = {
     description:
       "Independent read-only review of code changes against requirements and correctness",
     prefix: REVIEWER_PREFIX,
-    model: "gpt-5.6-sol:max",
+    model: "macaron-gateway/gpt-5.6-sol:max",
     tools: ["read", "grep", "bash"],
   },
   general: {

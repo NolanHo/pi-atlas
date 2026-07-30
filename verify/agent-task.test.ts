@@ -691,7 +691,7 @@ console.log("\nTest 12a: built-in agents (scout, implementer, reviewer, general)
   assert(BUILTIN_AGENTS["reviewer"].prefix !== undefined, "reviewer has prefix");
   assert(BUILTIN_AGENTS["reviewer"].tools?.includes("read"), "reviewer tools include read");
   assert(BUILTIN_AGENTS["reviewer"].tools?.includes("bash"), "reviewer tools include bash");
-  assert(BUILTIN_AGENTS["reviewer"].model === "gpt-5.6-sol:max", "reviewer pins gpt-5.6-sol max");
+  assert(BUILTIN_AGENTS["reviewer"].model === "macaron-gateway/gpt-5.6-sol:max", "reviewer pins macaron-gateway/gpt-5.6-sol max");
 
   // general: no prefix, no suffix, no tools, no model (inherits parent)
   assert(BUILTIN_AGENTS["general"].prefix === undefined, "general has no prefix");
