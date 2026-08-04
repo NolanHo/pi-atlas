@@ -14,6 +14,7 @@ pi-atlas is a collection of independent pi extensions. Each extension is a self-
 | `askuser` | tool | Ask the user questions and block for answers |
 | `target` | tool + command | Goal/todo management + `/goal` auto-continue |
 | `bash-timeout` | passive | Default timeouts for the built-in `bash` tool |
+| `compact` | passive | Higher-quality session compaction (replaces default summarization) |
 | `websearch` | tool | Server-side web search via an Anthropic-compatible provider |
 | `guard` | passive | Coordinates `agent_settled` + Feishu notifications |
 | `pi-acp-v2` | standalone server | Exposes pi as an ACP v2 agent over stdio (dev bridge, not a pi extension) |
@@ -88,6 +89,21 @@ Passive extension (no tools) that injects default timeouts for the built-in `bas
 - **`tool_result`** — when bash exits due to timeout, replaces the error message with a hint to use `create_bash` for long-running commands.
 
 Purely passive interception — zero overhead when an explicit timeout is provided.
+
+### Compact (`extensions/compact/`)
+
+Passive extension (no tools, no commands) that replaces pi's default session compaction with a higher-quality summarizer. It hooks the `session_before_compact` event and returns a **handoff document** (modeled on the `productivity/handoff` skill) built with the session's active model.
+
+How it works:
+- On `session_before_compact`, it consumes pi's pre-computed `CompactionPreparation` (cut point, `messagesToSummarize`, `previousSummary`, `fileOps`) and produces a handoff-style Markdown document — **Live Thread / Key Decisions & Constraints / Progress / References / Active Files / Critical Context / Next Steps / Suggested Skills** — via the session's active model, then returns `{ compaction: CompactionResult }`. pi persists it and rebuilds context; no cut logic is reinvented.
+- **Real-history summarization (codex-style)** — sends the **actual conversation messages** (`convertToLlm(messagesToSummarize + turnPrefix)`) as structured history plus a trailing "produce the handoff" instruction, via pi-ai `stream(...).result()` (works for all model APIs). This avoids the single giant serialized text-content block that triggered pi-ai SDK body-drops (→ empty → NA); verified reliable on a ~400k-token input. No output-token cap (effectiveness first).
+- **Anti-continuation / anti-tool-call** — the summarization call passes **no tools**, so the model can't call tools or continue the conversation; it only emits the document. Extraction takes only `text` content blocks.
+- **Quality levers** — handoff principles: resumable core (drop noise), **references-not-copies** (point to specs/plans/ADRs/issues/commits/diffs by path/URL, don't duplicate), live thread, suggested skills; preserves user directives, file paths, commands, and error strings verbatim; updates the prior summary incrementally (`previousSummary`) rather than rewriting from scratch. No secret redaction (by design).
+- **Target system integration** — reads the session's `target/state.json` and injects the primary goal + target checklist (with statuses) so the summary carries goal/progress across compaction and auto-continue stays aligned. Read-only and best-effort: a missing or corrupt state file is skipped and never breaks compaction.
+- **Robust fallback** — a degenerate/empty summary (e.g. the model returns the empty template on a very large input) is detected and retried with the most-recent half of the history (message-boundary progressive capping, up to 4 attempts); if still degenerate the handler returns `undefined` so pi runs its own default compaction — never persisting a useless summary (no data loss). Missing model, unresolved auth, or a thrown call likewise fall back. This extension can never break compaction.
+- Persists `{ readFiles, modifiedFiles }` in `CompactionEntry.details` so pi's cumulative file tracking survives across compactions.
+
+No configuration, no extra storage, no commands.
 
 ### WebSearch (`extensions/websearch/`)
 
@@ -164,6 +180,7 @@ ln -s /path/to/pi-atlas/extensions/task        ~/.pi/agent/extensions/task
 ln -s /path/to/pi-atlas/extensions/askuser     ~/.pi/agent/extensions/askuser
 ln -s /path/to/pi-atlas/extensions/target      ~/.pi/agent/extensions/target
 ln -s /path/to/pi-atlas/extensions/bash-timeout ~/.pi/agent/extensions/bash-timeout
+ln -s /path/to/pi-atlas/extensions/compact      ~/.pi/agent/extensions/compact
 ln -s /path/to/pi-atlas/extensions/websearch    ~/.pi/agent/extensions/websearch
 ln -s /path/to/pi-atlas/extensions/guard        ~/.pi/agent/extensions/guard
 ```
@@ -177,6 +194,7 @@ ln -s /path/to/pi-atlas/extensions/guard        ~/.pi/agent/extensions/guard
     "/path/to/pi-atlas/extensions/askuser",
     "/path/to/pi-atlas/extensions/target",
     "/path/to/pi-atlas/extensions/bash-timeout",
+    "/path/to/pi-atlas/extensions/compact",
     "/path/to/pi-atlas/extensions/websearch",
     "/path/to/pi-atlas/extensions/guard"
   ]
