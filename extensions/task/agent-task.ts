@@ -185,6 +185,15 @@ const createAgentParameters = Type.Object({
         "Agent name (built-in: scout, implementer, reviewer, general). Use general for custom agent behavior.",
     }),
   ),
+  model: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description:
+        'Model override for the sub-agent, e.g. "gpt-5.4" or "macaron-gateway/gpt-5.6-sol:max". ' +
+        'Overrides the agent preset model (scout/implementer/reviewer pin their own). ' +
+        "With agent=general (or no agent), sets the sub-agent model directly instead of inheriting the parent's.",
+    }),
+  ),
   cwd: Type.Optional(
     Type.String({ description: "Working directory (default: current cwd)" }),
   ),
@@ -196,6 +205,7 @@ interface CreateAgentDetails {
   taskId: string;
   status: string;
   agent?: string;
+  model?: string;
 }
 
 export const createAgentTool: ToolDefinition<typeof createAgentParameters, CreateAgentDetails> = {
@@ -275,6 +285,11 @@ export const createAgentTool: ToolDefinition<typeof createAgentParameters, Creat
       effectivePrompt = wrapPrompt(params.prompt, agentInfo);
     }
 
+    // Caller-provided model override wins over the agent preset model.
+    if (params.model) {
+      model = params.model;
+    }
+
     const task = taskManager.createAgentTask(sessionId, effectivePrompt, {
       cwd,
       agent: params.agent,
@@ -291,7 +306,7 @@ export const createAgentTool: ToolDefinition<typeof createAgentParameters, Creat
           text: `Agent task ${task.id} started (running in background).`,
         },
       ],
-      details: { taskId: task.id, status: task.status, agent: params.agent },
+      details: { taskId: task.id, status: task.status, agent: params.agent, model },
     };
   },
 };
@@ -306,6 +321,14 @@ const resumeTaskParameters = Type.Object({
     Type.String({
       description:
         "Optional new instruction. Defaults to 'Continue from where you left off.'",
+    }),
+  ),
+  model: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description:
+        'Optional model override for the resumed sub-agent, e.g. "gpt-5.4". ' +
+        "Overrides the agent preset model for the resumed task.",
     }),
   ),
 });
@@ -430,6 +453,11 @@ export const resumeTaskTool: ToolDefinition<typeof resumeTaskParameters, ResumeT
       }
       // If the agent definition is no longer found (e.g. file deleted),
       // proceed as a generic agent — the task can still be resumed.
+    }
+
+    // Caller-provided model override wins over the agent preset model.
+    if (params.model) {
+      model = params.model;
     }
 
     const task = taskManager.createAgentTask(sessionId, effectiveResumePrompt, {

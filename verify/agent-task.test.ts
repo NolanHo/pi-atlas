@@ -28,7 +28,7 @@ let fail = 0;
 interface ToolResult {
   isError?: boolean;
   content: { type: string; text: string }[];
-  details: { taskId: string; parentId?: string; status: string; agent?: string };
+  details: { taskId: string; parentId?: string; status: string; agent?: string; model?: string };
 }
 
 function assert(cond: unknown, msg: string): void {
@@ -65,10 +65,12 @@ const args = process.argv.slice(2);
 let sessionDir = ".";
 let resumeSession = "";
 let excludeTools = "";
+let model = "";
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--session-dir") sessionDir = args[i + 1];
   if (args[i] === "--session") resumeSession = args[i + 1];
   if (args[i] === "--exclude-tools") excludeTools = args[i + 1];
+  if (args[i] === "--model") model = args[i + 1];
 }
 
 const sid = resumeSession || require("crypto").randomUUID();
@@ -95,7 +97,7 @@ rl.on("line", (line) => {
     process.stdout.write(JSON.stringify({ id: cmd.id, type: "response", command: "prompt", success: true }) + "\\n");
 
     // Emit the agent event stream.
-    const suffix = (resumeSession ? " [resumed=" + resumeSession + "]" : "") + (excludeTools ? " [excluded=" + excludeTools + "]" : "");
+    const suffix = (resumeSession ? " [resumed=" + resumeSession + "]" : "") + (excludeTools ? " [excluded=" + excludeTools + "]" : "") + (model ? " [model=" + model + "]" : "");
     const msg = {
       role: "assistant",
       content: [{ type: "text", text: ${JSON.stringify(assistantText)} + suffix }],
@@ -871,6 +873,63 @@ console.log("\nTest 14: spawnAgent always passes --exclude-tools ask_user");
     assert(results[0].status === "completed", "task completed");
     // The mock echoes [excluded=<tools>] when --exclude-tools is present
     assert(results[0].output.includes("[excluded=ask_user]"), "--exclude-tools ask_user was passed");
+  } finally {
+    process.argv[1] = savedArgv1;
+    rmSync(sessionDir, { recursive: true, force: true });
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 15a. CreateAgent model override -> --model propagated to sub-agent
+// ---------------------------------------------------------------------------
+
+console.log("\nTest 15a: CreateAgent model override passes --model to sub-agent");
+{
+  const tempDir = mkdtempSync(join(tmpdir(), "pi-agent-model-"));
+  process.env.PI_CODING_AGENT_DIR = tempDir;
+  process.env.PI_ATLAS_DIR = tempDir;
+  const sessionId = "model-session";
+  const sessionDir = mkdtempSync(join(tmpdir(), "pi-agent-model-sess-"));
+  taskManager.setSessionDepth(sessionId, 0);
+
+  const mockScript = writeMockPi(tempDir, "model check");
+  const savedArgv1 = process.argv[1];
+  process.argv[1] = mockScript;
+
+  try {
+    // 1. Caller model with agent=general -> model applied directly.
+    const { createAgentTool } = await import("../extensions/task/agent-task.js");
+    const ctx = makeCtx(sessionId, sessionDir);
+    const r1 = await createAgentTool.execute(
+      "tc1",
+      { prompt: "test", agent: "general", model: "gpt-5.4" },
+      undefined, undefined, ctx,
+    ) as unknown as ToolResult;
+    assert(!("isError" in r1) || r1.isError !== true, "general + model not an error");
+    assert(r1.details.model === "gpt-5.4", "details.model reflects the override");
+    const { results: results1 } = await taskManager.awaitTasks(sessionId, [r1.details.taskId], 15000);
+    assert(results1[0].output.includes("[model=gpt-5.4]"), "general + model -> --model gpt-5.4 passed");
+
+    // 2. Caller model overrides agent preset (scout pins macaron-v1-coding-venti:low).
+    const r2 = await createAgentTool.execute(
+      "tc2",
+      { prompt: "test", agent: "scout", model: "deepseek-v4-flash" },
+      undefined, undefined, ctx,
+    ) as unknown as ToolResult;
+    assert(!("isError" in r2) || r2.isError !== true, "scout + model not an error");
+    const { results: results2 } = await taskManager.awaitTasks(sessionId, [r2.details.taskId], 15000);
+    assert(results2[0].output.includes("[model=deepseek-v4-flash]"), "caller model overrides scout preset");
+
+    // 3. No model -> no --model flag (inherits parent).
+    const r3 = await createAgentTool.execute(
+      "tc3",
+      { prompt: "test" },
+      undefined, undefined, ctx,
+    ) as unknown as ToolResult;
+    assert(!("isError" in r3) || r3.isError !== true, "no model not an error");
+    const { results: results3 } = await taskManager.awaitTasks(sessionId, [r3.details.taskId], 15000);
+    assert(!results3[0].output.includes("[model="), "no model -> no --model flag");
   } finally {
     process.argv[1] = savedArgv1;
     rmSync(sessionDir, { recursive: true, force: true });
