@@ -7,7 +7,7 @@
  * and the model answers from them. We collect that final answer text.
  *
  * macaron credentials are resolved at call time from the host's model registry
- * (the `macaron` provider must be configured) — no hardcoded keys.
+ * (the `macaronai` provider must be configured) — no hardcoded keys.
  */
 
 import { Type } from "@earendil-works/pi-ai";
@@ -19,7 +19,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 // `/api/*` subpaths — so the stream must come from compat, not a deep import.
 const { stream } = anthropicMessagesApi();
 
-const MACARON_PROVIDER = "macaron";
+const MACARON_PROVIDER = "macaronai";
 const MACARON_MODEL_ID = "macaron-v1-coding-venti";
 
 /** macaron's openai baseUrl ends with `/v1`; the Anthropic SDK appends `/v1/messages`, so strip the suffix. */
@@ -40,7 +40,7 @@ export interface MacaronConfig {
 
 /**
  * Resolve macaron credentials + anthropic baseURL from the model registry.
- * Returns null when the `macaron` provider is not configured (no apiKey/baseUrl).
+ * Returns null when the `macaronai` provider is not configured (no apiKey/baseUrl).
  */
 export async function resolveMacaronConfig(ctx: ExtensionContext): Promise<MacaronConfig | null> {
 	const apiKey = await ctx.modelRegistry.getApiKeyForProvider(MACARON_PROVIDER);
@@ -86,7 +86,7 @@ export async function searchWithMacaron(
 ): Promise<string> {
 	const config = await resolveMacaronConfig(ctx);
 	if (!config) {
-		throw new Error("macaron provider is not configured (no apiKey/baseUrl found in model registry).");
+		throw new Error("macaronai provider is not configured (no apiKey/baseUrl found in model registry).");
 	}
 
 	const model = {

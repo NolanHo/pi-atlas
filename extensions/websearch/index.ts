@@ -6,7 +6,7 @@
  * through macaron's Anthropic endpoint, which performs a server-side web search
  * and returns the model's answer (with sources).
  *
- * Requires the `macaron` provider to be configured (apiKey + baseUrl) in the
+ * Requires the `macaronai` provider to be configured (apiKey + baseUrl) in the
  * host's model registry. No data is persisted.
  */
 

@@ -54,7 +54,7 @@ function loadMacaronConfig(): { apiKey?: string; baseUrl?: string } | null {
 	if (envKey) return { apiKey: envKey, baseUrl: "https://mintcn.macaron.xin/v1" };
 	try {
 		const cfg = JSON.parse(readFileSync(join(homedir(), ".pi/agent/models.json"), "utf8"));
-		return cfg.providers?.macaron ?? null;
+		return cfg.providers?.macaronai ?? null;
 	} catch {
 		return null;
 	}
