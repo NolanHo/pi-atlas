@@ -111,7 +111,7 @@ export const BUILTIN_AGENTS: Record<string, AgentDefinition> = {
     description:
       "Fast read-only codebase recon that returns compressed context for handoff to other agents",
     prefix: SCOUT_PREFIX,
-    model: "macaron-v1-coding-venti:low",
+    model: "macaronai/macaron-v1-coding-venti:low",
     tools: ["read", "grep", "find", "ls", "bash"],
   },
   implementer: {
@@ -119,7 +119,7 @@ export const BUILTIN_AGENTS: Record<string, AgentDefinition> = {
     description:
       "Implementation owner for a single scoped change — gathers context, edits, verifies",
     prefix: IMPLEMENTER_PREFIX,
-    model: "macaron-v1-coding-venti:high",
+    model: "macaronai/macaron-v1-coding-venti:high",
     tools: ["read", "write", "edit", "bash"],
   },
   reviewer: {
@@ -127,7 +127,7 @@ export const BUILTIN_AGENTS: Record<string, AgentDefinition> = {
     description:
       "Independent read-only review of code changes against requirements and correctness",
     prefix: REVIEWER_PREFIX,
-    model: "macaron-gateway/gpt-5.6-sol:max",
+    model: "gpt-cn/gpt-5.6-sol:max",
     tools: ["read", "grep", "bash"],
   },
   general: {
