@@ -29,6 +29,14 @@ import { targetManager } from "../target/target-manager.js";
  */
 const GOAL_ACTIVE_TIMEOUT_CAP_S = 60;
 
+/**
+ * Sentinel value for RPC-mode rewind. The web UI surfaces this as a "previous
+ * question" select option / input button so a mis-answered question can be
+ * redone before the last question is submitted. Once the final answer is in,
+ * the loop exits and rewinding is no longer possible.
+ */
+const REWIND_PREVIOUS = "◀ Previous question";
+
 const AskUserSchema = Type.Object({
 	questions: Type.Array(
 		Type.Object({
@@ -172,19 +180,33 @@ export default function askUserExtension(pi: ExtensionAPI): void {
 			}
 
 			// 5. Non-TUI interactive mode (e.g. RPC): fall back to sequential
-			//    ctx.ui.select / input dialogs.
+			//    ctx.ui.select / input dialogs. The loop can rewind: choosing
+			//    or typing REWIND_PREVIOUS re-asks the previous question so a
+			//    mis-answered question can be redone before the last one is
+			//    submitted.
 			const opts = timeoutOption(timeoutSeconds);
 			const answers: string[] = [];
 
-			for (const q of questions) {
+			let i = 0;
+			while (i < questions.length) {
+				const q = questions[i];
 				const type = q.type ?? "input";
 				let answer: string;
 
 				if (type === "select") {
 					const optsWithOther = [...(q.options ?? []), "Other (free input)"];
-					const choice = await ctx.ui.select(q.question, optsWithOther, opts);
+					const selectOptions = i > 0 ? [...optsWithOther, REWIND_PREVIOUS] : optsWithOther;
+					const choice = await ctx.ui.select(q.question, selectOptions, opts);
+					if (choice === REWIND_PREVIOUS) {
+						i -= 1;
+						continue;
+					}
 					if (choice === "Other (free input)" || choice === undefined) {
 						const text = await ctx.ui.input(`${q.question} (custom answer)`, q.placeholder, opts);
+						if (text === REWIND_PREVIOUS && i > 0) {
+							i -= 1;
+							continue;
+						}
 						answer = text !== undefined
 							? text
 							: (q.default ?? (timeoutSeconds > 0 ? "(no answer / timed out)" : "(cancelled)"));
@@ -193,12 +215,17 @@ export default function askUserExtension(pi: ExtensionAPI): void {
 					}
 				} else {
 					const text = await ctx.ui.input(q.question, q.placeholder, opts);
+					if (text === REWIND_PREVIOUS && i > 0) {
+						i -= 1;
+						continue;
+					}
 					answer = text !== undefined
 						? text
 						: (q.default ?? (timeoutSeconds > 0 ? "(no answer / timed out)" : "(cancelled)"));
 				}
 
-				answers.push(answer);
+				answers[i] = answer;
+				i += 1;
 			}
 
 			return formatResult(questions, answers);
