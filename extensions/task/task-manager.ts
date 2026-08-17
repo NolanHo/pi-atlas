@@ -195,6 +195,8 @@ export class TaskManager {
       agent?: string;
       model?: string;
       tools?: string[];
+      /** System-prompt sections appended to the child via --append-system-prompt. */
+      appendSystemPrompts?: string[];
       sessionDir: string;
       depth?: number;
       parentId?: string;
@@ -235,6 +237,7 @@ export class TaskManager {
       prompt: prompt,
       model: options.model,
       tools: options.tools,
+      appendSystemPrompts: options.appendSystemPrompts,
       sessionDir: options.sessionDir,
       resumeSid: options.resumeSid,
     });
@@ -276,6 +279,8 @@ export class TaskManager {
       prompt: string;
       model?: string;
       tools?: string[];
+      /** System-prompt sections appended to the child via --append-system-prompt. */
+      appendSystemPrompts?: string[];
       sessionDir: string;
       resumeSid?: string;
     },
@@ -292,6 +297,9 @@ export class TaskManager {
     }
     if (options.tools && options.tools.length > 0) {
       args.push("--tools", options.tools.join(","));
+    }
+    for (const section of options.appendSystemPrompts ?? []) {
+      args.push("--append-system-prompt", section);
     }
 
     const invocation = getPiInvocation(args);

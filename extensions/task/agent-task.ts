@@ -22,7 +22,13 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { taskManager } from "./task-manager.js";
-import { resolveAgent, wrapPrompt, formatAgentCatalog, BUILTIN_AGENTS } from "./agents.js";
+import {
+  resolveAgent,
+  wrapPrompt,
+  formatAgentCatalog,
+  buildAgentSections,
+  listAgents,
+} from "./agents.js";
 import { getAgentSessionDir } from "../shared/atlas-paths.js";
 
 // ---------------------------------------------------------------------------
@@ -216,12 +222,17 @@ export const createAgentTool: ToolDefinition<typeof createAgentParameters, Creat
     "Returns immediately with a task ID. Use await_task to wait for completion " +
     "(agent tasks may take long — use the default timeout).\n\n" +
     "Available agents:\n" +
-    formatAgentCatalog(Object.values(BUILTIN_AGENTS)),
+    formatAgentCatalog(listAgents()),
   promptSnippet: "Run a background agent task (returns task ID immediately)",
   promptGuidelines: [
     "Use create_agent to delegate work to a sub-agent that runs independently while you continue.",
     "After creating an agent task, call await_task before relying on its output — the task runs asynchronously.",
     "Agent tasks run in isolated context with their own session; use resume_task to continue from a previous agent's output.",
+    "The dispatch prompt is the abstraction boundary (closed world): the sub-agent knows ONLY what the prompt says.",
+    "Full caller-side dispatch guide (how to be a good leader, per-agent contracts, orchestration, anti-patterns): read /root/docs/_shelf/codex-workbench/subagents/README.md before complex dispatches.",
+    "For implementer: provide all 6 required fields — change statement + explicit out-of-scope, acceptance criteria each with a runnable verification command, file write-set allowlist, constraints/invariants, the narrowest verification command, and an escalation channel with context pointers (paths, not paraphrases).",
+    "For reviewer/code-quality-reviewer: dispatch >=2 in parallel on different models and vote; merge findings by union, resolve verdict conflicts by the strictest verdict.",
+    "For tdd-tester: Red tests must be delivered BEFORE the implementer is dispatched; the implementer may refuse work without failing tests.",
   ],
   parameters: createAgentParameters,
   async execute(
@@ -260,15 +271,18 @@ export const createAgentTool: ToolDefinition<typeof createAgentParameters, Creat
 
     // Resolve agent definition (if specified). Each role pins its own model;
     // `general` omits model so the child inherits the parent session's model.
+    // Directory-based agents carry a persona, rules, and skill list — those
+    // become system-prompt append sections (see buildAgentSections).
     let model: string | undefined;
     let tools: string[] | undefined;
+    let appendSystemPrompts: string[] | undefined;
     let effectivePrompt = params.prompt;
 
     if (params.agent) {
       const agentInfo = resolveAgent(params.agent);
       if (!agentInfo) {
         // Agent not found — error and list available agents.
-        const catalog = formatAgentCatalog(Object.values(BUILTIN_AGENTS));
+        const catalog = formatAgentCatalog(listAgents());
         return {
           isError: true,
           content: [
@@ -283,6 +297,7 @@ export const createAgentTool: ToolDefinition<typeof createAgentParameters, Creat
       model = agentInfo.model;
       tools = agentInfo.tools;
       effectivePrompt = wrapPrompt(params.prompt, agentInfo);
+      appendSystemPrompts = buildAgentSections(agentInfo);
     }
 
     // Caller-provided model override wins over the agent preset model.
@@ -295,6 +310,7 @@ export const createAgentTool: ToolDefinition<typeof createAgentParameters, Creat
       agent: params.agent,
       model,
       tools,
+      appendSystemPrompts,
       sessionDir: getAgentSessionDir(sessionId),
       depth: currentDepth,
     });
@@ -439,9 +455,11 @@ export const resumeTaskTool: ToolDefinition<typeof resumeTaskParameters, ResumeT
     // restored via `--session <sid>` by spawnAgent (not by text injection).
     const resumeInstruction = params.prompt ?? "Continue from where you left off.";
 
-    // Re-resolve agent definition to carry over prefix/suffix, model, and tools.
+    // Re-resolve agent definition to carry over prefix/suffix, model, tools,
+    // and the persona/rules/skills system-prompt sections.
     let model: string | undefined;
     let tools: string[] | undefined;
+    let appendSystemPrompts: string[] | undefined;
     let effectiveResumePrompt = resumeInstruction;
 
     if (parentTask.agent) {
@@ -450,6 +468,7 @@ export const resumeTaskTool: ToolDefinition<typeof resumeTaskParameters, ResumeT
         model = agentInfo.model;
         tools = agentInfo.tools;
         effectiveResumePrompt = wrapPrompt(resumeInstruction, agentInfo);
+        appendSystemPrompts = buildAgentSections(agentInfo);
       }
       // If the agent definition is no longer found (e.g. file deleted),
       // proceed as a generic agent — the task can still be resumed.
@@ -465,6 +484,7 @@ export const resumeTaskTool: ToolDefinition<typeof resumeTaskParameters, ResumeT
       agent: parentTask.agent,
       model,
       tools,
+      appendSystemPrompts,
       sessionDir: getAgentSessionDir(sessionId),
       depth: currentDepth,
       parentId: params.taskId,

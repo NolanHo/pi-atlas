@@ -5,7 +5,7 @@
  * Run: npx tsx verify/agent-task.test.ts
  */
 
-import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,9 +17,27 @@ import {
   getPiInvocation,
   MAX_AGENT_DEPTH,
 } from "../extensions/task/agent-task.js";
-import { resolveAgent, wrapPrompt, formatAgentCatalog, BUILTIN_AGENTS } from "../extensions/task/agents.js";
+import {
+  resolveAgent,
+  wrapPrompt,
+  formatAgentCatalog,
+  buildAgentSections,
+  resolveAgentSkills,
+  parseSkillsList,
+  listAgents,
+  BUILTIN_AGENTS,
+} from "../extensions/task/agents.js";
 import * as persistence from "../extensions/task/persistence.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+
+// ---------------------------------------------------------------------------
+// Fixture roots — isolate dir-based agent resolution from the real runtime
+// (~/.pi/agent/subagents may exist on the dev machine; tests must be hermetic).
+// ---------------------------------------------------------------------------
+
+const fixtureRoot = mkdtempSync(join(tmpdir(), "pi-agent-fixture-"));
+process.env.PI_ATLAS_SUBAGENTS_DIR = join(fixtureRoot, "subagents");
+process.env.PI_ATLAS_SKILLS_DIRS = join(fixtureRoot, "skills");
 
 let pass = 0;
 let fail = 0;
@@ -647,16 +665,17 @@ console.log("\nTest 11: real pi end-to-end (simple prompt)");
 // 12. resolveAgent (built-in only)
 // ---------------------------------------------------------------------------
 
-console.log("\nTest 12: resolveAgent finds built-in agents");
+console.log("\nTest 12: resolveAgent falls back to built-ins (no dir definition)");
 {
+  // PI_ATLAS_SUBAGENTS_DIR points at the empty fixture — built-ins apply.
   const scout = resolveAgent("scout");
   assert(scout !== null, "scout resolved");
-  assert(scout!.prefix?.includes("You are a scout"), "scout prefix extracted");
+  assert(scout!.persona === undefined, "built-in scout has no persona (degraded mode)");
   assert(scout!.tools?.includes("read"), "scout tools include read");
 
   const reviewer = resolveAgent("reviewer");
   assert(reviewer !== null, "reviewer resolved");
-  assert(reviewer!.prefix?.includes("senior reviewer"), "reviewer prefix extracted");
+  assert(reviewer!.model === "grok-cn/grok-4.6:xhigh", "reviewer pins grok-cn/grok-4.6 xhigh");
 
   const implementer = resolveAgent("implementer");
   assert(implementer !== null, "implementer resolved");
@@ -664,7 +683,7 @@ console.log("\nTest 12: resolveAgent finds built-in agents");
 
   const general = resolveAgent("general");
   assert(general !== null, "general resolved");
-  assert(general!.prefix === undefined, "general has no prefix");
+  assert(general!.model === undefined, "general has no model (inherits parent)");
 
   const notFound = resolveAgent("nonexistent-agent");
   assert(notFound === null, "unknown agent returns null");
@@ -681,19 +700,19 @@ console.log("\nTest 12a: built-in agents (scout, implementer, reviewer, general)
   assert(BUILTIN_AGENTS["reviewer"] !== undefined, "reviewer built-in exists");
   assert(BUILTIN_AGENTS["general"] !== undefined, "general built-in exists");
 
-  assert(BUILTIN_AGENTS["scout"].prefix !== undefined, "scout has prefix");
+  assert(BUILTIN_AGENTS["scout"].prefix === undefined, "built-in scout has no prefix (persona lives in dir)");
   assert(BUILTIN_AGENTS["scout"].suffix === undefined, "scout has no suffix");
   assert(BUILTIN_AGENTS["scout"].tools?.includes("read"), "scout tools include read");
   assert(BUILTIN_AGENTS["scout"].tools?.includes("grep"), "scout tools include grep");
-  assert(BUILTIN_AGENTS["scout"].model === "macaron-v1-coding-venti:low", "scout pins macaron low");
+  assert(BUILTIN_AGENTS["scout"].model === "ds-cn/deepseek-v4-flash", "scout pins ds-cn deepseek-v4-flash");
 
   assert(BUILTIN_AGENTS["implementer"].tools?.includes("edit"), "implementer tools include edit");
-  assert(BUILTIN_AGENTS["implementer"].model === "macaron-v1-coding-venti:high", "implementer pins macaron high");
+  assert(BUILTIN_AGENTS["implementer"].model === "ds-cn/deepseek-v4-pro:xhigh", "implementer pins ds-cn deepseek-v4-pro xhigh");
 
-  assert(BUILTIN_AGENTS["reviewer"].prefix !== undefined, "reviewer has prefix");
+  assert(BUILTIN_AGENTS["reviewer"].prefix === undefined, "built-in reviewer has no prefix");
   assert(BUILTIN_AGENTS["reviewer"].tools?.includes("read"), "reviewer tools include read");
   assert(BUILTIN_AGENTS["reviewer"].tools?.includes("bash"), "reviewer tools include bash");
-  assert(BUILTIN_AGENTS["reviewer"].model === "macaron-gateway/gpt-5.6-sol:max", "reviewer pins macaron-gateway/gpt-5.6-sol max");
+  assert(BUILTIN_AGENTS["reviewer"].model === "grok-cn/grok-4.6:xhigh", "reviewer pins grok-cn/grok-4.6 xhigh");
 
   // general: no prefix, no suffix, no tools, no model (inherits parent)
   assert(BUILTIN_AGENTS["general"].prefix === undefined, "general has no prefix");
@@ -708,9 +727,9 @@ console.log("\nTest 12a: built-in agents (scout, implementer, reviewer, general)
 
 console.log("\nTest 12b: wrapPrompt wraps prompt with prefix and suffix");
 {
-  // prefix only (scout)
-  const scout = BUILTIN_AGENTS["scout"];
-  const wrapped = wrapPrompt("Find the auth module", scout);
+  // prefix only
+  const withPrefix: { prefix: string; suffix?: string } = { prefix: "You are a scout" };
+  const wrapped = wrapPrompt("Find the auth module", withPrefix);
   assert(wrapped.startsWith("You are a scout"), "prefix at start");
   assert(wrapped.includes("Find the auth module"), "prompt in middle");
   assert(wrapped.endsWith("Find the auth module"), "prompt at end (no suffix)");
@@ -723,24 +742,127 @@ console.log("\nTest 12b: wrapPrompt wraps prompt with prefix and suffix");
   const wrapped2 = wrapPrompt("TASK", both);
   assert(wrapped2 === "BEFORE\n\nTASK\n\nAFTER", "prefix + prompt + suffix with newlines");
 
-  // general (no prefix, no suffix) — prompt returned as-is
-  const general = BUILTIN_AGENTS["general"];
-  const wrapped3 = wrapPrompt("Do something", general);
-  assert(wrapped3 === "Do something", "general returns prompt unchanged");
+  // no prefix, no suffix — prompt returned as-is
+  const plain = wrapPrompt("Do something", {});
+  assert(plain === "Do something", "no prefix/suffix returns prompt unchanged");
 }
 
 // ---------------------------------------------------------------------------
 // 12c. formatAgentCatalog
 // ---------------------------------------------------------------------------
 
-console.log("\nTest 12c: formatAgentCatalog lists all built-in agents");
+console.log("\nTest 12c: formatAgentCatalog lists all agents");
 {
-  const catalog = formatAgentCatalog(Object.values(BUILTIN_AGENTS));
+  const catalog = formatAgentCatalog(listAgents());
   assert(catalog.includes("scout:"), "catalog includes scout");
   assert(catalog.includes("implementer:"), "catalog includes implementer");
   assert(catalog.includes("reviewer:"), "catalog includes reviewer");
   assert(catalog.includes("general:"), "catalog includes general");
   assert(catalog.includes("- "), "catalog uses dash format");
+}
+
+// ---------------------------------------------------------------------------
+// 12d. Directory-based agents (PERSONA.md + AGENTS.md + SKILL.md)
+// ---------------------------------------------------------------------------
+
+console.log("\nTest 12d: directory-based agent definitions (PERSONA/AGENTS/SKILL)");
+{
+  const root = process.env.PI_ATLAS_SUBAGENTS_DIR!;
+  const dir = join(root, "reviewer");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "PERSONA.md"),
+    [
+      "---",
+      "name: reviewer",
+      "description: Independent read-only review",
+      "model: grok-cn/grok-4.6:xhigh",
+      "tools: read,grep,bash",
+      "---",
+      "You are a reviewer persona body.",
+    ].join("\n"),
+  );
+  writeFileSync(join(dir, "AGENTS.md"), "Read-only. No diff evidence, no finding.");
+  writeFileSync(
+    join(dir, "SKILL.md"),
+    ["required:", "- git-workflow: pr.md", "optional:", "- lazy-github", ""].join("\n"),
+  );
+
+  // Second dir-based agent: priority model list with an unavailable first entry.
+  const scout2Dir = join(root, "scout2");
+  mkdirSync(scout2Dir, { recursive: true });
+  writeFileSync(
+    join(scout2Dir, "PERSONA.md"),
+    [
+      "---",
+      "name: scout2",
+      "description: Priority list test",
+      "models: no-such-provider/ghost:xhigh, ds-cn/deepseek-v4-pro:xhigh",
+      "---",
+      "Scout two persona.",
+    ].join("\n"),
+  );
+
+  // Skill fixtures under PI_ATLAS_SKILLS_DIRS.
+  const skillsRoot = process.env.PI_ATLAS_SKILLS_DIRS!;
+  const gw = join(skillsRoot, "git-workflow");
+  mkdirSync(gw, { recursive: true });
+  writeFileSync(join(gw, "SKILL.md"), "---\nname: git-workflow\n---\ngit-workflow body");
+  writeFileSync(join(gw, "pr.md"), "pr body");
+
+  const resolved = resolveAgent("reviewer");
+  assert(resolved !== null, "dir-based reviewer resolved");
+  assert(resolved!.persona === "You are a reviewer persona body.", "persona from PERSONA.md body");
+  assert(resolved!.rules === "Read-only. No diff evidence, no finding.", "rules from AGENTS.md");
+  assert(resolved!.model === "grok-cn/grok-4.6:xhigh", "model from frontmatter");
+  assert(resolved!.modelPriority?.length === 1, "single model = 1-entry priority list");
+  assert(resolved!.tools?.includes("bash"), "tools from frontmatter");
+  assert(resolved!.skills?.required.length === 1, "one required skill");
+  assert(resolved!.skills?.optional.length === 1, "one optional skill");
+  assert(resolved!.sourceDir === dir, "sourceDir recorded");
+
+  // buildAgentSections: persona + rules + resolved skills.
+  const sections = buildAgentSections(resolved!);
+  assert(sections.length === 3, "persona + rules + skill = 3 sections");
+  assert(sections[0].includes("<agent_persona>"), "persona section wrapped");
+  assert(sections[0].includes("reviewer persona body"), "persona content present");
+  assert(sections[1].includes("<agent_rules>"), "rules section wrapped");
+  assert(sections[2].includes("## Skill: git-workflow"), "skill section present");
+  assert(sections[2].includes("pr body"), "referenced file content included");
+  assert(!sections[2].includes("name: git-workflow"), "skill frontmatter stripped");
+
+  // Missing required skill → reported; optional missing → silent.
+  const missing = resolveAgentSkills({
+    required: [{ name: "no-such-skill", files: [] }],
+    optional: [],
+  });
+  assert(missing.missingRequired.includes("no-such-skill"), "missing required reported");
+  assert(missing.sections.length === 0, "no sections for missing skill");
+
+  const opt = resolveAgentSkills({
+    required: [],
+    optional: [{ name: "no-such-opt", files: [] }],
+  });
+  assert(opt.missingRequired.length === 0, "optional missing not reported");
+  assert(opt.sections.length === 0, "no sections for missing optional");
+
+  // parseSkillsList edge cases.
+  const parsed = parseSkillsList("required:\n- a: f1, f2\noptional:\n- b\n- ignored: trailing comment # x\n");
+  assert(parsed.required[0].name === "a" && parsed.required[0].files.length === 2, "skill entry with files parsed");
+  assert(parsed.optional[0].name === "b" && parsed.optional[0].files.length === 0, "bare skill entry parsed");
+
+  // Model priority list: first entry unavailable on the device -> next available picked.
+  const scout2 = resolveAgent("scout2");
+  assert(scout2 !== null, "scout2 dir-based resolved");
+  assert(
+    scout2!.model === "ds-cn/deepseek-v4-pro:xhigh",
+    "priority list skips unavailable model and picks next available",
+  );
+  assert(scout2!.modelPriority?.length === 2, "priority list preserved");
+
+  // listAgents: dir-based reviewer overrides the built-in reviewer.
+  const listed = listAgents().find((a) => a.name === "reviewer");
+  assert(listed?.persona !== undefined, "listed reviewer is the dir-based one");
 }
 
 // ---------------------------------------------------------------------------
@@ -911,7 +1033,7 @@ console.log("\nTest 15a: CreateAgent model override passes --model to sub-agent"
     const { results: results1 } = await taskManager.awaitTasks(sessionId, [r1.details.taskId], 15000);
     assert(results1[0].output.includes("[model=gpt-5.4]"), "general + model -> --model gpt-5.4 passed");
 
-    // 2. Caller model overrides agent preset (scout pins macaron-v1-coding-venti:low).
+    // 2. Caller model overrides agent preset (scout pins ds-cn/deepseek-v4-flash).
     const r2 = await createAgentTool.execute(
       "tc2",
       { prompt: "test", agent: "scout", model: "deepseek-v4-flash" },
@@ -955,4 +1077,5 @@ console.log("\nTest 15: extractSessionIdFromPath extracts UUID from session file
 // ---------------------------------------------------------------------------
 
 console.log(`\nagent-task.test: ${pass} passed, ${fail} failed`);
+rmSync(fixtureRoot, { recursive: true, force: true });
 process.exit(fail === 0 ? 0 : 1);
