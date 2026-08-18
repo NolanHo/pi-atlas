@@ -229,7 +229,7 @@ export const createAgentTool: ToolDefinition<typeof createAgentParameters, Creat
     "After creating an agent task, call await_task before relying on its output — the task runs asynchronously.",
     "Agent tasks run in isolated context with their own session; use resume_task to continue from a previous agent's output.",
     "The dispatch prompt is the abstraction boundary (closed world): the sub-agent knows ONLY what the prompt says.",
-    "Full caller-side dispatch guide (how to be a good leader, per-agent contracts, orchestration, anti-patterns): read /root/docs/_shelf/codex-workbench/subagents/README.md before complex dispatches.",
+    "Full caller-side dispatch guide (how to be a good leader, per-agent contracts, orchestration, anti-patterns): read /root/docs/_shelf/nolanho-harness/subagents/README.md before complex dispatches.",
     "For implementer: provide all 6 required fields — change statement + explicit out-of-scope, acceptance criteria each with a runnable verification command, file write-set allowlist, constraints/invariants, the narrowest verification command, and an escalation channel with context pointers (paths, not paraphrases).",
     "For reviewer/code-quality-reviewer: dispatch >=2 in parallel on different models and vote; merge findings by union, resolve verdict conflicts by the strictest verdict.",
     "For tdd-tester: Red tests must be delivered BEFORE the implementer is dispatched; the implementer may refuse work without failing tests.",
