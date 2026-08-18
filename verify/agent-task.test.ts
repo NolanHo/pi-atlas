@@ -675,7 +675,7 @@ console.log("\nTest 12: resolveAgent falls back to built-ins (no dir definition)
 
   const reviewer = resolveAgent("reviewer");
   assert(reviewer !== null, "reviewer resolved");
-  assert(reviewer!.model === "grok-cn/grok-4.6:xhigh", "reviewer pins grok-cn/grok-4.6 xhigh");
+  assert(reviewer!.model === "ds-cn/deepseek-v4-pro:xhigh", "reviewer pins ds-cn deepseek-v4-pro xhigh");
 
   const implementer = resolveAgent("implementer");
   assert(implementer !== null, "implementer resolved");
@@ -712,7 +712,7 @@ console.log("\nTest 12a: built-in agents (scout, implementer, reviewer, general)
   assert(BUILTIN_AGENTS["reviewer"].prefix === undefined, "built-in reviewer has no prefix");
   assert(BUILTIN_AGENTS["reviewer"].tools?.includes("read"), "reviewer tools include read");
   assert(BUILTIN_AGENTS["reviewer"].tools?.includes("bash"), "reviewer tools include bash");
-  assert(BUILTIN_AGENTS["reviewer"].model === "grok-cn/grok-4.6:xhigh", "reviewer pins grok-cn/grok-4.6 xhigh");
+  assert(BUILTIN_AGENTS["reviewer"].model === "ds-cn/deepseek-v4-pro:xhigh", "reviewer pins ds-cn deepseek-v4-pro xhigh");
 
   // general: no prefix, no suffix, no tools, no model (inherits parent)
   assert(BUILTIN_AGENTS["general"].prefix === undefined, "general has no prefix");
@@ -776,7 +776,7 @@ console.log("\nTest 12d: directory-based agent definitions (PERSONA/AGENTS/SKILL
       "---",
       "name: reviewer",
       "description: Independent read-only review",
-      "model: grok-cn/grok-4.6:xhigh",
+      "model: ds-cn/deepseek-v4-pro:xhigh",
       "tools: read,grep,bash",
       "---",
       "You are a reviewer persona body.",
@@ -814,7 +814,7 @@ console.log("\nTest 12d: directory-based agent definitions (PERSONA/AGENTS/SKILL
   assert(resolved !== null, "dir-based reviewer resolved");
   assert(resolved!.persona === "You are a reviewer persona body.", "persona from PERSONA.md body");
   assert(resolved!.rules === "Read-only. No diff evidence, no finding.", "rules from AGENTS.md");
-  assert(resolved!.model === "grok-cn/grok-4.6:xhigh", "model from frontmatter");
+  assert(resolved!.model === "ds-cn/deepseek-v4-pro:xhigh", "model from frontmatter");
   assert(resolved!.modelPriority?.length === 1, "single model = 1-entry priority list");
   assert(resolved!.tools?.includes("bash"), "tools from frontmatter");
   assert(resolved!.skills?.required.length === 1, "one required skill");

@@ -203,7 +203,7 @@ export const BUILTIN_AGENTS: Record<string, AgentDefinition> = {
     name: "reviewer",
     description:
       "Independent read-only review of code changes against requirements and correctness",
-    model: "grok-cn/grok-4.6:xhigh",
+    model: "ds-cn/deepseek-v4-pro:xhigh",
     tools: ["read", "grep", "bash"],
   },
   general: {
